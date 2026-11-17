@@ -1,12 +1,15 @@
 # Главный файл приложения
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from typing import List, Dict, Any
 from datetime import datetime
 
 app = FastAPI(
-    title="ToDo лист API",
+    title="ToDo List API",
     description="API для управления задачами с использованием матрицы Эйзенхауэра",
-    version="1.0.0"
+    version="1.0.0",
+    contact={
+        "name": "Монахов Георгий Алексеевич"
+    }
 )
 
 # Временное хранилище (позже будет заменено на PostgreSQL)
@@ -52,3 +55,133 @@ tasks_db: List[Dict[str, Any]] = [
         "created_at": datetime.now()
     },
 ]
+
+@app.get("/")
+async def welcome() -> dict:
+    return {
+        "message": "Привет, студент!",
+        "title": app.title,
+        "description": app.description,
+        "version": app.version,
+        "contact": app.contact
+    }
+
+@app.get("/tasks")
+async def get_all_tasks() -> dict:
+    return {
+        "count": len(tasks_db),
+        "tasks": tasks_db
+    }
+
+
+@app.get("/tasks/quadrant/{quadrant}")
+async def get_tasks_by_quadrant(quadrant: str) -> dict:
+    if quadrant not in ["Q1", "Q2", "Q3", "Q4"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Неверный квадрант. Используйте: Q1, Q2, Q3, Q4"
+        )
+
+    filtered_tasks = [
+        task for task in tasks_db
+        if task["quadrant"] == quadrant
+    ]
+
+    return {
+        "quadrant": quadrant,
+        "count": len(filtered_tasks),
+        "tasks": filtered_tasks
+    }
+
+
+
+@app.get("/tasks/stats")
+async def get_tasks_stats() -> dict:
+    by_quadrant = {
+        "Q1": 0,
+        "Q2": 0,
+        "Q3": 0,
+        "Q4": 0
+    }
+
+    by_status = {
+        "completed": 0,
+        "pending": 0
+    }
+
+    for task in tasks_db:
+        by_quadrant[task["quadrant"]] += 1
+
+        if task["completed"]:
+            by_status["completed"] += 1
+        else:
+            by_status["pending"] += 1
+
+    return {
+        "total_tasks": len(tasks_db),
+        "by_quadrant": by_quadrant,
+        "by_status": by_status
+    }
+
+
+@app.get("/tasks/status/{status}")
+async def get_tasks_by_status(status: str) -> dict:
+    if status not in ["completed", "pending"]:
+        raise HTTPException(
+            status_code=404,
+            detail="Статус не найден"
+        )
+
+    is_completed = status == "completed"
+
+    filtered_tasks = [
+        task for task in tasks_db
+        if task["completed"] == is_completed
+    ]
+
+    return {
+        "status": status,
+        "count": len(filtered_tasks),
+        "tasks": filtered_tasks
+    }
+
+
+@app.get("/tasks/search")
+async def search_tasks(q: str) -> dict:
+    q = q.strip()
+
+    if len(q) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Запрос должен содержать минимум 2 символа"
+        )
+
+    filtered_tasks = [
+        task for task in tasks_db
+        if q.lower() in task["title"].lower()
+        or q.lower() in (task.get("description") or "").lower()
+    ]
+
+    if not filtered_tasks:
+        raise HTTPException(
+            status_code=404,
+            detail="Задачи не найдены"
+        )
+
+    return {
+        "query": q,
+        "count": len(filtered_tasks),
+        "tasks": filtered_tasks
+    }
+
+
+@app.get("/tasks/{task_id}")
+async def get_task_by_id(task_id: int) -> dict:
+    for task in tasks_db:
+        if task["id"] == task_id:
+            return task
+
+    raise HTTPException(
+        status_code=404,
+        detail="Задача не найдена"
+    )
